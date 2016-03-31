@@ -62,5 +62,41 @@ diff -r $diffopt "$chkdir" "$bakdir" || test_fail "backup dir contents are bogus
 
 checkit "$RSYNC -ai --info=backup --inplace --no-whole-file '$fromdir/' '$bakdir/'" "$fromdir" "$bakdir"
 
+#
+# Bug 11668: Returns zero exit code when unable to make backup dir on a full filesystem
+#
+
+cleanup()
+{
+  umount "$tmpdir/bup" || true
+}
+
+trap cleanup EXIT
+
+mkdir -p "$fromdir/s"
+echo "file1" > "$fromdir/s/file1"
+
+mkdir -p "$todir/d/s"
+echo "file1 different" > "$todir/d/s/file1"
+
+# create small filesystem and mount it
+umount "$tmpdir/bup" || true
+dd if=/dev/zero of="$tmpdir/fake.fs" bs=1024 count=1024
+mkfs.ext4 -F "$tmpdir/fake.fs"
+mkdir -p "$tmpdir/bup"
+mount "$tmpdir/fake.fs" "$tmpdir/bup"
+
+# fill
+dd if=/dev/zero of="$tmpdir/bup/fill.bin" bs=1024 count=2048 > /dev/null 2>&1 || true
+
+# don't exit on non-zero; that's what's being tested
+set +e
+$RSYNC -av -b --backup-dir="$tmpdir/bup" "$fromdir/s" "$todir/d/."
+if [ $? -eq 0 ]; then
+  echo "Backup mkdir failed but exited with" $?
+  exit 1
+fi
+set -e
+
 # The script would have aborted on error, so getting here means we've won.
 exit 0
